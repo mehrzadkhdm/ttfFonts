@@ -1,0 +1,225 @@
+body {
+    background: #ccc;
+    font-family: "Roboto Slab", "Times New Roman", serif;
+}
+
+a {
+    color: #008;
+
+}
+
+a:visited {
+    color: black;    
+}
+
+.blog-title {
+    text-align: center;
+    margin-bottom: 1em;
+}
+
+.article-list {
+    margin: 0 auto;
+}
+
+#blogText img {
+   max-width: 90%;
+}
+
+.article {
+    background: white;
+    padding: 15px;
+    box-shadow: 0 2px 1px rgba(0,0,0,0.08);
+    font-size: 15px;
+    cursor: pointer;
+    overflow: hidden;
+    text-align: left;
+    display: inline-block;
+    width: 350px;
+}
+
+.dashboard {
+    position: fixed;
+}
+
+.main-entry {
+    background: white;
+    margin: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 1px rgba(0,0,0,0.08);
+    font-size: 15px;
+    overflow: hidden;
+    font-weight: 300;
+}
+
+.article:hover {
+    background: #ffcc00;
+}
+
+h1, h2, h3, h4 {
+    font-family: "Roboto", sans;
+    font-weight: bold;
+    padding-bottom: 0;
+}
+
+h1, h2, h3, h4, .main-entry {
+    font-size: 17px;
+}
+
+h1.blogTitle {
+    text-align: center;
+}
+
+.blogDate {
+    color: #888;
+    font-size: small;       
+    text-align: center;
+}
+
+pre {
+    font-size: 10px;
+    background: rgb(240,240,240);
+    border: 1px dashed rgb(128, 128, 128);
+    padding: 2px;
+}
+
+.article a.title {
+    text-decoration: none;
+    color: black;
+}
+
+.article img {
+    width: 270px;
+    display: block;
+    margin: 10px auto;
+}
+
+
+.large-article {
+}
+
+.small-article {
+}
+
+.unshown {
+    opacity: 0.2;
+}
+
+.main-entry {
+    margin: 0 auto;
+    padding: 15px;
+}
+
+blockquote
+{
+    background: #f2eee7;
+    padding: 0.5em;
+    font-size: smaller;
+}
+
+.idea {
+    background-image: url(lightbulb.png);
+    background-repeat: no-repeat;
+    background-position: 5px 5px;
+    background-color: #ccc;
+    padding: 10px 10px 10px 75px;
+    min-height: 80px;
+    font-size: 10pt;
+    margin-top: 1em;
+}
+
+.idea h1 {
+    margin-bottom: 0;
+    margin-top: 0;
+    text-align: left;
+}
+
+img.logo {
+    max-width: 90%;
+}
+
+.comment-name {
+    font-weight: bold;
+}
+
+.comment-date {
+    color: #888;
+}
+
+.comment {
+    background: #eee;
+    font-family: "Roboto", sans;
+    font-size: 13px;
+    padding: 15px;
+    text-align: left;         
+    word-wrap: break-word;
+    box-shadow: 0 2px 1px rgba(0,0,0,0.08);
+    position: relative;
+}
+
+.comment textarea {
+    font-family: "Roboto", sans;
+    font-size: 12px;
+}
+
+
+
+.main-entry, .comments {
+    display: inline-block;
+    vertical-align: top;
+    text-align: left;
+}
+
+.main {
+    text-align: center;
+    margin: 0 auto;
+            
+}
+
+a.edit-comment {
+    color: black;
+    position: absolute;
+    top: 15px;
+    right: 15px;     
+    color: #aaa;
+}
+
+#commentForm {
+    color: #444;
+    display: none;
+}
+
+.navigate {
+    font-size: 35px;      
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    width: 100%;
+}
+
+.navigate a {
+    color: #888;
+    text-decoration: none;
+    text-shadow: 0 3px 3px rgba(0,0,0,0.18);
+}
+
+.navigate a:hover {
+    color: #fc0;
+}
+
+a.nav-left {
+    position: absolute;
+    left: 15px;          
+    top: 10px;
+}
+
+a.nav-right {
+    position: absolute;
+    right: 15px;          
+    top: 10px;
+}
+
+@media only screen and (max-width: 530px) {
+    .large-article, .small-article {
+    }
+}
+

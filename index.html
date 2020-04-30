@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=utf-8" />
+<link
+href='http://fonts.googleapis.com/css?family=Roboto+Slab:300,400,700|Roboto:400,700' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Merriweather:400,400italic,700' rel='stylesheet' type='text/css'>
+<link rel='stylesheet' type='text/css' href="style.css">
+  <meta name="viewport"
+  content="width=device-width,
+  minimum-scale=1.0, maximum-scale=1.0" />
+<link rel="alternate" type="application/atom+xml"
+    href="http://stevehanov.ca/blog/?atom"
+    title="RSS" />
+<title>Let's read a Truetype font file from scratch</title>
+<style>
+</style>
+</head>
+<body>
+    <a href="https://plus.google.com/115821829711457452449" rel="publisher"></a>
+    <script src="http://code.jquery.com/jquery-1.7.2.min.js"></script>
+    <script src="Layout2.js"></script>
+        <div class=blog-title>
+        <a href="/blog"><img class=logo src="http://stevehanov.ca/blog/caption.png"
+        alt="Steve Hanov's Blog"></a><br>
+        I know how to make and sell software online, and I can share my tips
+        with you.<br>
+        <a href="mailto:steve.hanov@gmail.com">Email</a>
+        | <a href="https://twitter.com/smhanov">Twitter</a>
+        | <a
+        href="http://www.linkedin.com/pub/steve-hanov/10/430/410">LinkedIn</a>
+        | <a href="http://stevehanov.ca/comics">Comics</a>
+        | <a href="/blog">All articles</a>
+    </div>
+    <div class=main id=main style="visibility:hidden">
+    <div class="main-entry cols-2">
+                <div class=navigate>
+                            <a class=nav-left href="?id=145">&lt;</a>
+                                        <a class=nav-right href="?id=144">&gt;</a>
+                    </div>
+        <h1 id=blogTitle class="blogTitle">Let's read a Truetype font file from scratch</h1>
+        <div class=blogDate>Posted five years ago</div>
+        <div id=blogText>
+        
+
+Drag a font file here to reveal its innermost secrets! <a href="https://github.com/creationix/font-awesome/blob/master/FontAwesome.ttf?raw=true">Here's one in case you don't have one handy.</a>
+
+<div id=dropTarget style="border:3px dashed #5f90d0; font-size:30px;width:300px;height:100px;padding:20px;margin:0 auto; text-align: center">Drag TTF file here </div>
+<div id=font-container></div>
+<script src="TrueType.js" type="text/javascript"></script>
+<script>
+$("#dropTarget").on("drop", function(e) {
+    setTimeout(function() {layout.go(); }, 500);
+});
+</script>
+<p>
+<a href="https://gist.github.com/smhanov/f009a02c00eb27d99479a1e37c1b3354">Source code</a>
+
+<p>
+Here are the steps we will follow:
+<ol>
+<li>When the file is dragged onto the web page, we want to read it.
+<li>We need to be able to interpret the numbers in the file, even though they were made for C programs to read.
+<li>We have to find the number of characters in the file and the positions of the glyph outlines in the file
+<li>We have to interpret the format of the glyph outlines
+<li>Finally, we have to render them to the web page.
+</ol>
+
+<h2>Reading Files from Javascript</h2>
+<p>
+Whoah that sounds dangerous. But javascript can't read any file on your computer; just the ones you happen to drag over the web page, intentionally or accidentally. We do that by handling the dragover and drop events. When the drop event is received, it contains a reference to the file and then our code is allowed to read it. This is done without any interactions with the server.
+<p>
+We also have to handle the ondragover event and cancel it, because otherwise it won't work.
+
+<pre>
+var dropTarget = document.getElementById("dropTarget");
+dropTarget.ondragover = function(e) {
+    e.preventDefault();
+};
+dropTarget.ondrop = function(e) {
+    e.preventDefault();
+
+    if (!e.dataTransfer || !e.dataTransfer.files) {
+        alert("Your browser didn't include any files in the drop event");
+        return;
+    }
+
+    var reader = new FileReader();
+    reader.readAsArrayBuffer(e.dataTransfer.files[0]);
+    reader.onload = function(e) {
+        ShowTtfFile(reader.result);
+    };
+
+};
+</pre>
+
+<p>
+You can't do much with the HTML5 File object. To get its data, you have to use the FileReader to read it asynchronously. You can choose to read it as a base64 encoded string or an array buffer. We choose an ArrayBuffer.
+<p>
+
+<h2>Interpreting the C structures</h2>
+TrueType files were designed when computers had very little memory. They were designed to be mapped into RAM and read in place. C structures were even placed directly in the file. Opening a true type file was just a matter of loading it in. There was no need to do anything else. We will do a similar thing, but we will need a way to easily seek around the file and read numbers in various formats.
+<p>
+Here's a class that lets you do that.
+
+<pre>
+function BinaryReader(arrayBuffer)
+{
+    assert(arrayBuffer instanceof ArrayBuffer);
+    this.pos = 0;
+    this.data = new Uint8Array(arrayBuffer);
+}
+
+BinaryReader.prototype = {
+    seek: function(pos) {
+        assert(pos >=0 && pos <= this.data.length);
+        var oldPos = this.pos;
+        this.pos = pos;
+        return oldPos;
+    },
+
+    tell: function() {
+        return this.pos;
+    },
+
+    getUint8: function() {
+        assert(this.pos < this.data.length);
+        return this.data[this.pos++];
+    },
+
+    getUint16: function() {
+        return ((this.getUint8() << 8) | this.getUint8()) >>> 0;
+    },
+
+    getUint32: function() {
+       return this.getInt32() >>> 0;
+    },
+
+    getInt16: function() {
+        var result = this.getUint16();
+        if (result & 0x8000) {
+            result -= (1 << 16);
+        }
+        return result;
+    }, 
+
+    getInt32: function() {
+        return ((this.getUint8() << 24) | 
+                (this.getUint8() << 16) |
+                (this.getUint8() <<  8) |
+                (this.getUint8()      ));
+    }, 
+
+    getFword: function() {
+        return this.getInt16();
+    },
+
+    get2Dot14: function() {
+        return this.getInt16() / (1 << 14);
+    },
+
+    getFixed: function() {
+        return this.getInt32() / (1 << 16);
+    },
+
+    getString: function(length) {
+        var result = "";
+        for(var i = 0; i < length; i++) {
+            result += String.fromCharCode(this.getUint8());
+        }
+        return result;
+    },
+
+    getDate: function() {
+        var macTime = this.getUint32() * 0x100000000 + this.getUint32();
+        var utcTime = macTime * 1000 + Date.UTC(1904, 1, 1);
+        return new Date(utcTime);
+    }
+};
+</pre>
+
+<h3>Fixed point numbers</h3>
+Besides unsigned and signed 8, 16, and 32 bit numbers, there are some other types of things that appear in font files. The Fixed type is a way of representing decimals in a certain number of bits. Like fixed-point arithmetic, only we use binary instead of 10s. Suppose we wanted to write (in base 10) the number 1.53 but our decimal point key is broken. We would instead write 153. To convert it back, we divide by 100. Likewise, in binary, it works the same way, except that we divide by a power of two.
+
+<h3>A note on Javascript numbers</h3>
+Javascript has a wishy-washy "number" type. It is usually a 32-bit integer. It switches from signed to unsigned whenever it feels like it, and when you least expect it, it will switch to a 64-bit double precision number.
+<p>
+But you can force it to be signed using the "unsigned shift right" operator (>>>). By shifting it by 0, it converts the internal type to unsigned.
+
+<h2>Finding the treasures</h2>
+The TrueType font format is <a href="https://developer.apple.com/fonts/TrueType-Reference-Manual/">described by Apple here</a>. The truetype file is prefixed with something called the "offset" table that tells you where everything else is in the file. We will have to go diving into various tables to find the actual outlines of the fonts.
+<p>
+The tables also have a checksum to ensure they are right. This is obtained by adding up all the 4-byte integers in them, modulo 2<sup>32</sup>.
+Here's the code to read the offsets.
+<pre>
+function TrueTypeFont(arrayBuffer)
+{
+    this.file = new BinaryReader(arrayBuffer);
+    this.tables = this.readOffsetTables(this.file);
+    this.readHeadTable(this.file);
+    this.length = this.glyphCount();
+}
+
+TrueTypeFont.prototype = {
+    readOffsetTables: function(file) {
+        var tables = {};
+        this.scalarType = file.getUint32();
+        var numTables = file.getUint16();
+        this.searchRange = file.getUint16();
+        this.entrySelector = file.getUint16();
+        this.rangeShift = file.getUint16();
+
+        for( var i = 0 ; i < numTables; i++ ) {
+            var tag = file.getString(4);
+            tables[tag] = {
+                checksum: file.getUint32(),
+                offset: file.getUint32(),
+                length: file.getUint32()
+            };
+
+            if (tag !== 'head') {
+                assert(this.calculateTableChecksum(file, tables[tag].offset,
+                            tables[tag].length) === tables[tag].checksum);
+            }
+        }
+
+        return tables;
+    },
+
+    calculateTableChecksum: function(file, offset, length)
+    {
+        var old = file.seek(offset);
+        var sum = 0;
+        var nlongs = ((length + 3) / 4) | 0;
+        while( nlongs-- ) {
+            sum = (sum + file.getUint32() & 0xffffffff) >>> 0;
+        }
+
+        file.seek(old);
+        return sum;
+    },
+</pre>
+
+Okay now we know where all the various tables are in the file. But one that we will need later is the "head" table, which contains the dimenions of the font, and importantly, the format of the glyph index.
+
+<pre>
+    readHeadTable: function(file) {
+        assert("head" in this.tables);
+        file.seek(this.tables["head"].offset);
+
+        this.version = file.getFixed();
+        this.fontRevision = file.getFixed();
+        this.checksumAdjustment = file.getUint32();
+        this.magicNumber = file.getUint32();
+        assert(this.magicNumber === 0x5f0f3cf5);
+        this.flags = file.getUint16();
+        this.unitsPerEm = file.getUint16();
+        this.created = file.getDate();
+        this.modified = file.getDate();
+        this.xMin = file.getFword();
+        this.yMin = file.getFword();
+        this.xMax = file.getFword();
+        this.yMax = file.getFword();
+        this.macStyle = file.getUint16();
+        this.lowestRecPPEM = file.getUint16();
+        this.fontDirectionHint = file.getInt16();
+        this.indexToLocFormat = file.getInt16();
+        this.glyphDataFormat = file.getInt16();
+    },
+</pre>
+
+There are many tables to obtain the characteristics of the font, or the horizontal distance between glyphs, or the minimum recommended height, creation date, etc. But I want to stay focused on the buried treasure -- the glyph outlines.
+
+<p>
+The glyph outlines are contained in the "glyf" section. The glyphs are highly compressed and each one is a different length. To find a particular one quickly, we have to first go to the <a href="https://developer.apple.com/fonts/TTRefMan/RM06/Chap6loca.html">"loca" table.</a> 
+
+<p>
+
+It is simply an array of 2 byte or four byte values, depending on the "indexToLocFormat" in the header. When this is set to one, the values are four bytes long and give the position of a glyph in the glyf table. Otherwise, they are  two bytes long, and give the position of the glyph divided by two in the glyf table. File formats make confusing tradeoffs to be small.
+
+<p>
+<pre>
+    getGlyphOffset: function(index) {
+        assert("loca" in this.tables);
+        var table = this.tables["loca"];
+        var file = this.file;
+        var offset, old;
+
+        if (this.indexToLocFormat === 1) {
+            old = file.seek(table.offset + index * 4);
+            offset = file.getUint32();
+        } else {
+            old = file.seek(table.offset + index * 2);
+            offset = file.getUint16() * 2;
+        }
+
+        file.seek(old);
+
+        return offset + this.tables["glyf"].offset;
+    },
+</pre>
+<p>
+Given any glyph index, we can now locate is exact position from the start of the file. Now things get a little complicated.
+<p>
+Conceptually the glyph can be one of two structures, which share a common header.
+
+(diagram)
+<p>
+When two shapes are drawn on top of each-other, it is convention that the second will cut out the first one if it has a different winding order. That is, if the points are specified going clockwise instead of counter-clockwise and vice-versa. Fonts use this convention to build up shapes from contours.
+For example, the letter O will have two contours -- one for the outer circle, and one for the inner one. 
+<p>
+But there are two kinds of glyphs. The simple type is made of contours, as above. The compound type is made up of other glyphs. To draw the glyph, we have to draw each of the component glyphs and shift them around. This is made to handle characters with accents. Accented versions of the letters can therefore take very little space.
+<p>
+Let's keep focused on getting the treasure. We will ignore the compound glyphs. We just want to extract those sweet outlines.
+
+<h2>Interpreting the outlines</h2>
+<p>
+This function will read the glyph header, and then call the right function to read it.
+<pre>
+    readGlyph: function(index) {
+        var offset = this.getGlyphOffset(index);
+        var file = this.file;
+
+        if (offset >= this.tables["glyf"].offset + this.tables["glyf"].length)
+        {
+            return null;
+        }
+
+        assert(offset >= this.tables["glyf"].offset);
+        assert(offset < this.tables["glyf"].offset + this.tables["glyf"].length);
+
+        file.seek(offset);
+
+        var glyph = {
+            numberOfContours: file.getInt16(),
+            xMin: file.getFword(),
+            yMin: file.getFword(),
+            xMax: file.getFword(),
+            yMax: file.getFword()
+        };
+
+        assert(glyph.numberOfContours >= -1);
+
+        if (glyph.numberOfContours === -1) {
+            this.readCompoundGlyph(file, glyph);
+        } else {
+            this.readSimpleGlyph(file, glyph);
+        }
+
+        return glyph;
+    },
+</pre>
+
+The simple glyphs are stored in a compressed format. They can deal with repeated points, and small movements from one point to the next very well. This is done using a series of one-byte flags. Each flag-byte indicates whether the corresponding point is stored in one byte or two bytes, for each of the X and Y coordinates. After the flags come the X coordinates, and finally the Y coordinates. The great thing about this is that if either the X or the Y coordinate doesn't change, only one byte is used to indicate this in the flags.
+<p>
+When we read a glyph, we will assemble the points together into one array of (x, y) coordinates, plus one of the flags which is very important for rendering.
+
+<pre>
+    readSimpleGlyph: function(file, glyph) {
+
+        var ON_CURVE        =  1,
+            X_IS_BYTE       =  2,
+            Y_IS_BYTE       =  4,
+            REPEAT          =  8,
+            X_DELTA         = 16,
+            Y_DELTA         = 32;
+
+        glyph.type = "simple";
+        glyph.contourEnds = [];
+        var points = glyph.points = [];
+
+        for( var i = 0; i < glyph.numberOfContours; i++ ) {
+            glyph.contourEnds.push(file.getUint16());
+        }
+
+        // skip over intructions
+        file.seek(file.getUint16() + file.tell());
+
+        if (glyph.numberOfContours === 0) {
+            return;
+        }
+
+        var numPoints = Math.max.apply(null, glyph.contourEnds) + 1;
+
+        var flags = [];
+
+        for( i = 0; i < numPoints; i++ ) {
+            var flag = file.getUint8();
+            flags.push(flag);
+            points.push({
+                onCurve: (flag & ON_CURVE) > 0
+            });
+
+            if ( flag & REPEAT ) {
+                var repeatCount = file.getUint8();
+                assert(repeatCount > 0);
+                i += repeatCount;
+                while( repeatCount-- ) {
+                    flags.push(flag);
+                    points.push({
+                        onCurve: (flag & ON_CURVE) > 0
+                    });
+                }
+            }
+        }
+
+        function readCoords(name, byteFlag, deltaFlag, min, max) {
+            var value = 0;
+
+            for( var i = 0; i < numPoints; i++ ) {
+                var flag = flags[i];
+                if ( flag & byteFlag ) {
+                    if ( flag & deltaFlag ) {
+                        value += file.getUint8();
+                    } else {
+                        value -= file.getUint8();
+                    }
+                } else if ( ~flag & deltaFlag ) {
+                    value += file.getInt16();
+                } else {
+                    // value is unchanged.
+                }
+
+                points[i][name] = value;
+            }
+        }
+
+        readCoords("x", X_IS_BYTE, X_DELTA, glyph.xMin, glyph.xMax);
+        readCoords("y", Y_IS_BYTE, Y_DELTA, glyph.yMin, glyph.yMax);
+    }
+</pre>
+
+<h2>Drawing the glyphs in the web page</h2>
+Finally we have something to show for all the effort. We want to draw the glyphs. HTML5 has its handy canvas API that will let us draw shapes.
+
+<p>
+Here's the function that controls the whole thing. It takes and array buffer
+from the drag & drop event, and creates our TrueType object from it. Then it removes any previous glyphs from the screen. For each character, it creates an &lt;canvas> element and scales the font so that it's EM height (literally, the height of the letter 'M') is about 64 pixels high. The font also has to be flipped vertically, because its coordinates assume zero is in the lower left of the screen, but our coordinates are in the top left.
+
+<pre>
+function ShowTtfFile(arrayBuffer)
+{
+    var font = new TrueTypeFont(arrayBuffer);
+
+    var width = font.xMax - font.xMin;
+    var height = font.yMax - font.yMin;
+    var scale = 64 / font.unitsPerEm;
+
+    var container = document.getElementById("font-container");
+
+    while(container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
+
+    for( var i = 0; i < font.length; i++ ) {
+        var canvas = document.createElement("canvas");
+        canvas.style.border = "1px solid gray";
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        var ctx = canvas.getContext("2d");
+        ctx.scale(scale, -scale);
+        ctx.translate(-font.xMin, -font.yMin - height);
+        ctx.fillStyle = "#000000";
+        ctx.beginPath();
+        if (font.drawGlyph(i, ctx)) {
+            ctx.fill();
+            container.appendChild(canvas);
+        }
+    }
+
+}
+</pre>
+
+All that's left to show you is how they are drawn. In this function we ignore the curves and simply connect each point in the outline. However, in reality, some points are actually control points in a quadratic bezier curve.
+
+<pre>
+
+    drawGlyph: function(index, ctx) {
+
+        var glyph = this.readGlyph(index);
+
+        if ( glyph === null || glyph.type !== "simple" ) {
+            return false;
+        }
+
+        var p = 0,
+            c = 0,
+            first = 1;
+
+        while (p < glyph.points.length) {
+            var point = glyph.points[p];
+            if ( first === 1 ) {
+                ctx.moveTo(point.x, point.y);
+                first = 0;
+            } else {
+                ctx.lineTo(point.x, point.y);
+            }
+
+            if ( p === glyph.contourEnds[c] ) {
+                c += 1;
+                first = 1;
+            }
+
+            p += 1;
+        }
+
+        return true;
+    }
+</pre>
+
+<h2>The code</h2>
+The code that I am using these days is on <a href="https://gist.github.com/smhanov/f009a02c00eb27d99479a1e37c1b3354">GitHub here</a>. It has been enhanced to handle character kerning, and CMaps which map codepoints to glyph indicies.
+
+        </div>
+    </div>
+        <div class=comment>
+            <b>Steve Hanov</b> makes a living working on 
+            <a href="http://rhymebrain.com">Rhymebrain.com</a>,
+            <a href="http://pricemonkey.ca">PriceMonkey.ca</a>,
+            <a
+            href="http://www.websequencediagrams.com">www.websequencediagrams.com</a>,
+            and <a href="http://zwibbler.com">Zwibbler.com</a>. He lives in 
+            Waterloo, Canada.
+        </div>
+        <div class=comment>
+            <div id=writecomment-div>
+                Post comment<br>
+                <input type=text style="width:100%" onfocus="writeComment()">
+            </div>
+            <form id=commentForm action="/blog/index.php" method=POST onsubmit="return validateCommentForm(this);">
+                <span style="visibility:hidden;position:absolute;"> Your Email (Not displayed): <input type=text name="email"/></span>
+                Post comment<br>
+                <textarea style="width:100%" cols=60 id=comment-text name=comment rows=10 wrap=soft ></textarea><br>
+                <br>
+                Real Name
+                <br>
+                <input type=text name=displayname id="realname" />
+                <br>
+                Editing Password (Optional): <br>
+                <input type=text name=editpassword><br>
+                <span style="font-size: 10px;color:#888">
+                Choose an edit password if you want to be able to edit or delete
+                your comment later.
+                </span>
+                <br>
+                <input type=submit value="Post Comment" />
+                <input type=button value="Cancel" onclick="cancelComment()"/>
+                <input type=hidden name=id value="143">
+            </form>
+        
+        </div>
+                    <div class=comment onmouseenter="mouseentercomment(5938)"
+                    onmouseleave="mouseleavecomment(5938)" 
+                    id=wholecomment5938 >
+                    <a href="javascript:editcomment(5938)"
+                        class=edit-comment id=edit-comment-5938>edit</a>
+                <div class=comment-name>Owen Reese </div>
+                <div class=comment-date>ten months ago </div>
+                <div class=comment-text id="commentText5938">This is awesome.
+<p>
+I'm thinking to write my own TTF parser in freeBASIC and with your helpful info here I might be able to do it. </div>
+            </div>
+                    <div class=comment onmouseenter="mouseentercomment(5864)"
+                    onmouseleave="mouseleavecomment(5864)" 
+                    id=wholecomment5864 >
+                    <a href="javascript:editcomment(5864)"
+                        class=edit-comment id=edit-comment-5864>edit</a>
+                <div class=comment-name>Sologic </div>
+                <div class=comment-date>one year ago </div>
+                <div class=comment-text id="commentText5864">Super useful post, thank you! I was able to use this as a guide to subsetting TTF in a PDF. Rock on! </div>
+            </div>
+                    <div class=comment onmouseenter="mouseentercomment(5835)"
+                    onmouseleave="mouseleavecomment(5835)" 
+                    id=wholecomment5835 >
+                    <a href="javascript:editcomment(5835)"
+                        class=edit-comment id=edit-comment-5835>edit</a>
+                <div class=comment-name>Fontain </div>
+                <div class=comment-date>one year ago </div>
+                <div class=comment-text id="commentText5835">I get the following error when I drag in a TTF:
+<p>
+
+<p>
+TrueType.js:8 Uncaught Assertion failed
+<p>
+assert @ TrueType.js:8
+<p>
+readOffsetTables @ TrueType.js:115
+<p>
+TrueTypeFont @ TrueType.js:92
+<p>
+ShowTtfFile @ TrueType.js:413
+<p>
+reader.onload @ TrueType.js:458
+<p>
+FileReader (async)
+<p>
+dropTarget.ondrop @ TrueType.js:456 </div>
+            </div>
+        
+                    <div class='article small-article'
+            onclick='document.location.href="?id=97"'>
+                <a class=title href='?id=97'>
+                    <h1>Creating portable binaries on Linux</h1>
+                </a>
+                
+Distributing applications on Linux is hard. Sure, with modern package management, <i>installing</i> software is easy. But if you are <i>distributing</i> an application, you probably need one Windows version, plus umpteen different versions for Linux. In this article, we'll create a dummy application that targets the following operating systems, which are commonly used in business environments...
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=95"'>
+                <a class=title href='?id=95'>
+                    <h1>C++: A language for next generation web apps</h1>
+                </a>
+                
+On Monday, I was pleased to be an uninvited speaker at <a href="http://devwaterloo.pbworks.com/">Waterloo Devhouse</a>, hosted in <a href="http://postrank.com">Postrank's</a> magnificent office. After making some surreptitious alterations to their agile development wall, I gave a tongue-in-cheek talk on how C++ can fit in to a web application.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=41"'>
+                <a class=title href='?id=41'>
+                    <h1>See sound without drugs</h1>
+                </a>
+                
+<img src='transparent.gif' osrc='soundlab.jpg' style='background: url(sprite.jpg); background-position: 0px -8084px;width:270px;height:175px'>
+I have created an application that just turns on the microphone and continually plots the FFT magnitude of what it records. It allows control over the window size and sampling rate.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=31"'>
+                <a class=title href='?id=31'>
+                    <h1>Free, Raw Stock Data</h1>
+                </a>
+                
+Scraping financial information is easy with my friend, python.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=121"'>
+                <a class=title href='?id=121'>
+                    <h1>An instant rhyming dictionary for any web site</h1>
+                </a>
+                
+Sometimes your API has to be simple enough for non-technical people to use it. Find out how to include a rhyming dictionary on your web page just by copying and pasting.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=99"'>
+                <a class=title href='?id=99'>
+                    <h1>The simple and obvious way to walk through a graph</h1>
+                </a>
+                
+At some point in your programming career you may have to go through <a href="?id=65">a graph of items</a> and process them all exactly once. If you keep following neighbours, the path might loop back on itself, so you need to keep track of which ones have been processed already.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=88"'>
+                <a class=title href='?id=88'>
+                    <h1>How IE &lt;canvas> tag emulation works</h1>
+                </a>
+                
+At the time of this writing, Internet Explorer at version 8.0 still lacks the &lt;canvas> tag. But you can easily add the capability by including a short javascript file in your page. At first glance, that's astounding. How do you implement an entire vector graphics API in a few lines of Javascript?
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=142"'>
+                <a class=title href='?id=142'>
+                    <h1>My thoughts on various programming languages</h1>
+                </a>
+                
+<img src='transparent.gif' osrc='../comics/comic_20040604.png' style='background: url(sprite.jpg); background-position: 0px -309px;width:270px;height:83px'>
+Some ill-informed remarks on various programming languages.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=90"'>
+                <a class=title href='?id=90'>
+                    <h1>Regular Expression Matching can be Ugly and Slow</h1>
+                </a>
+                
+If you open the first few pages of O'Reilly's Beautiful Code, you will find a well written chapter by Brian Kernighan (Personal motto: "No, I didn't invent C. Who told you that?"). The non-C inventing professor describes how a limited form of regular expressions can be implemented elegantly in only a few lines of C code.
+            </div>
+                    <div class='article small-article'
+            onclick='document.location.href="?id=117"'>
+                <a class=title href='?id=117'>
+                    <h1>Why don't web browsers do this?</h1>
+                </a>
+                
+<img src='transparent.gif' osrc='http://upload.wikimedia.org/wikipedia/commons/4/48/C64_startup_animiert.gif' style='background: url(sprite.jpg); background-position: 0px -3042px;width:270px;height:186px'>
+Why don't web pages start as fast as this computer from 1984?
+            </div>
+            </div>
+    </div>
+    <script>
+        var layout = new Layout({
+            container: document.getElementById("main"),
+            columnWidth: 350,
+            maxCols: 3,
+            margin: 10,
+            fill: "#eee"
+        });
+        document.getElementById("main").style.visibility = "visible";
+
+        function MakeAjaxRequest( strUrl, params, fnCallBack, param ) 
+{
+    var xmlHttpReq;
+
+    try {
+        xmlHttpReq = new XMLHttpRequest();
+    } catch ( trymicrosoft ) {
+        try {
+            xmlHttpReq = new ActiveXObject("Msxml2.XMLHTTP");
+        } catch(othermicrosoft) {
+            try {
+                xmlHttpReq = new ActiveXObject("Microsoft.XMLHTTP");
+            } catch(failed) {
+                xmlHttpReq = null;
+            }
+        }
+    }
+
+    xmlHttpReq.open('POST', strUrl, true);
+    xmlHttpReq.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xmlHttpReq.onreadystatechange = function() {
+        if (xmlHttpReq.readyState === 4) {
+            var result = { status: "", json: null };
+            if (xmlHttpReq.status === 200 ) {
+                try {
+                    //result.json = window.JSON.parse(xmlHttpReq.responseText);
+                    result.json = eval("("+xmlHttpReq.responseText+")");
+                    result.status = result.json["status"];
+                } catch( e ) {
+                    //alert(e);
+                    result.status = "Error in server response";
+                }
+            } else if ( xmlHttpReq.message ) {
+                result.status = xmlHttpReq.message;
+            } else if ( xmlHttpReq.status === 0 ) {
+                result.status = "Network error. Check internet connection";
+            } else {
+                result.status = 
+                    "Server returned status " + xmlHttpReq.status;
+            }
+            fnCallBack( result );
+        }
+    };
+
+    var query = "";
+    var first = true;
+    for ( var key in params ) {
+        if ( params.hasOwnProperty( key ) ) {
+            if ( !first ) {
+                query += '&';
+            } 
+            first = false;
+            query += key + "=" + encodeURIComponent(params[key]);
+        }
+    }
+
+    xmlHttpReq.send(query);
+}
+
+function delcomment(id)
+{
+    elem = document.getElementById("comment"+id);
+    MakeAjaxRequest(
+        "index.php",
+        {
+            'delcomment': 1,
+            'id': id,
+            "password": ""
+        },
+
+        function( result ) {
+            if ( result.status === "ok" ) {
+                var box = document.getElementById("wholecomment" + id);
+                $(box).slideUp("slow");
+            } else {
+
+            }
+        },
+        null
+    );
+    return null;
+}
+
+function rtrim( buffer )
+{   
+    var pos = buffer.length - 1;
+    while( pos >= 0 && 
+        ( buffer.charAt(pos) === ' ' ||
+          buffer.charAt(pos) === '\t' ||
+          buffer.charAt(pos) === '\r' ||
+          buffer.charAt(pos) === '\n' ) ) {
+        pos--;      
+    }
+
+    return buffer.substr(0, pos + 1);
+}
+
+function ltrim( buffer )
+{   
+    var pos = 0;
+    while( pos < buffer.length && 
+        ( buffer.charAt(pos) === ' ' ||
+          buffer.charAt(pos) === '\t' ||
+          buffer.charAt(pos) === '\r' ||
+          buffer.charAt(pos) === '\n' ) ) {
+        pos += 1;
+    }
+
+    return buffer.substr(pos);
+}
+
+function divToText( div )
+{
+    var stack = [div];
+    var text = [];
+    while( stack.length > 0 ) {
+        var node = stack.pop();
+
+        if ( node.nodeType === 1 && node.nodeName === "P" ) {
+            var t = ltrim(rtrim(node.textContent));
+            if ( t !== "" && t !== "Edit" ) {
+                text.push(t);
+                text.push("\n\n");
+            }
+        } else if ( node.nodeType === 3 ) {
+            var t = ltrim(rtrim(node.data));
+            if ( t !== "" && t !== "Edit" ) {
+                text.push(t);
+                text.push("\n\n");
+            }
+
+        } else {
+            for ( node = node.lastChild;
+                  node !== null;  
+                  node = node.previousSibling )
+            {
+                stack.push( node );
+            }
+        }
+
+    }
+
+    return text.join("");
+}
+
+function textToDiv( div, text )
+{
+    while( div.firstChild !== null ) {
+        div.removeChild( div.firstChild);
+    }
+
+    var arr = text.split("\n" );
+    for ( var i = 0; i < arr.length; i++ ) {
+        var p = document.createElement("p");
+        p.appendChild( document.createTextNode(arr[i]));
+        div.appendChild( p );
+    }
+}
+
+var cancelFn = null;
+
+function editcomment(id)
+{
+    if (cancelFn) {
+        cancelFn();
+    }
+
+    var commentDiv = document.getElementById("commentText" + id);
+    var textarea = document.createElement("textarea" );
+    textarea.cols = 80;
+    textarea.rows = 15;
+    textarea.wrap = "soft";
+    textarea.value = divToText( commentDiv );
+    textarea.style.width = "100%";
+    commentDiv.style.display = "none";
+
+    var containerDiv = commentDiv.parentNode;
+    var div = document.createElement("div");
+    containerDiv.appendChild( div );
+
+    div.appendChild(textarea);
+    div.appendChild(document.createElement("br"));
+
+    var passwordInput = document.createElement("input");
+    passwordInput.type = "text";
+    div.appendChild(document.createTextNode("Editing Password"));
+    div.appendChild(passwordInput);
+    div.appendChild(document.createElement("br"));
+    
+    var saveButton = document.createElement("input");
+    saveButton.type = "button";
+    saveButton.value = "Save Changes";
+    div.appendChild(saveButton);
+
+    var deleteButton = document.createElement("input");
+    deleteButton.type = "button";
+    deleteButton.value = "Delete Comment";
+    div.appendChild(deleteButton);
+
+    var cancelButton = document.createElement("input");
+    cancelButton.type = "button";
+    cancelButton.value = "Cancel";
+    div.appendChild(cancelButton);
+
+    var statusDiv = document.createElement("div");
+    div.appendChild(statusDiv);
+    statusDiv.style.color = "red";
+
+    layout.go();
+    textarea.focus();
+
+    saveButton.onclick = function()
+    {
+        div.style.visibility = "hidden";
+        MakeAjaxRequest(
+            "index.php",
+            {
+                'editcomment': 1,
+                'id': id,
+                'text': textarea.value,
+                "password": passwordInput.value
+            },
+
+            function( result ) {
+                if ( result.status === "ok" ) {
+                    containerDiv.removeChild(div);
+                    commentDiv.style.display = "block";
+                    textToDiv( commentDiv, textarea.value );
+                    var adiv = document.createElement("div");
+                    var a= document.createElement("a");
+                    a.href="javascript:editcomment("+id+")";
+                    a.appendChild(document.createTextNode("Edit"));
+                    adiv.appendChild(a);
+                    commentDiv.appendChild(adiv);
+                } else {
+                    div.style.visibility = "visible";
+                    while( statusDiv.firstChild !== null ) {
+                        statusDiv.removeChild( statusDiv.firstChild );
+                    }
+                    statusDiv.appendChild(document.createTextNode(result.status) );
+                }
+                layout.go();
+                cancelFn = null;
+            },
+            null
+        );
+    };
+
+    deleteButton.onclick = function()
+    {
+        if ( confirm( "Are you sure you want to delete this comment?" ) ) {
+            div.style.visibility = "hidden";
+            MakeAjaxRequest(
+                "index.php",
+                {
+                    'delcomment': 1,
+                    'id': id,
+                    "password": passwordInput.value
+                },
+
+                function( result ) {
+                    if ( result.status === "ok" ) {
+                        var box = document.getElementById("wholecomment" + id);
+                        box.parentNode.removeChild(box);
+                    } else {
+                        div.style.visibility = "visible";
+                        while( statusDiv.firstChild !== null ) {
+                            statusDiv.removeChild( statusDiv.firstChild );
+                        }
+                        statusDiv.appendChild(document.createTextNode(result.status) );
+                    }
+                    layout.go();
+                    cancelFn = null;
+                },
+                null
+            );
+        }
+    };
+
+    cancelButton.onclick = function()
+    {
+        containerDiv.removeChild(div);
+        commentDiv.style.display = "block";
+        layout.go();
+        cancelFn = null;
+    };
+
+    cancelFn = function() {
+        cancelButton.onclick();
+        cancelFn = null;
+    }
+
+}
+
+function e(name) {
+    return document.getElementById(name);
+}
+
+function writeComment() {
+    document.getElementById("writecomment-div").style.display = "none";
+    document.getElementById("commentForm").style.display = "block";
+    layout.go();
+    document.getElementById("comment-text").focus();
+}
+
+function cancelComment() {
+    document.getElementById("writecomment-div").style.display = "block";
+    document.getElementById("commentForm").style.display = "none";
+    layout.go();
+}
+
+function validateCommentForm(form) {
+    if (form.displayname.value == "") {
+        alert("Please fill in the display name.");
+        return false;
+    }
+
+    if (form.comment.value == "") {
+        alert("Please fill in the comment.");
+        return false;
+    }
+
+    if (form.comment.value.indexOf("http:") >= 0 || form.comment.value.indexOf("https:") >=
+            0 ) {
+        alert("You may not write http: in your comment.");
+        return false;
+    }
+}
+
+function mouseentercomment(id)
+{
+    e("edit-comment-" + id).style.color = "#000";
+}
+
+function mouseleavecomment(id)
+{
+    e("edit-comment-" + id).style.color = "#aaa";
+}
+    </script>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+     (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new
+     Date();a=s.createElement(o),
+       m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+         })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-5751047-4', 'auto');
+  ga('require', 'displayfeatures');
+  ga('send', 'pageview');
+
+</script>
+
+</body>
+</html>
